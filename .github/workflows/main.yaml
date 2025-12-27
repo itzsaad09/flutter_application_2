@@ -1,13 +1,8 @@
 on:
-  pull_request:
-    branches:
-      - main
-      - master
   push:
-    branches:
-      - main
-      - master
-      - develop
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
 
 name: "Build & Release"
 
@@ -33,36 +28,37 @@ jobs:
           channel: 'stable'
           architecture: x64
 
+      - name: Decode Keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+
+      - name: Create key.properties
+        run: |
+          echo "storeFile=upload-keystore.jks" > android/key.properties
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
+
       - name: Create .env file
         run: |
           echo "BACKEND_URL=${{ secrets.BACKEND_URL }}" > .env
-          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" > .env
+          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> .env
 
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build and Rename Android APK
+      # CRITICAL: Run this to find the SHA-1 you need for Google Cloud Console
+      - name: Generate Signing Report
+        run: cd android && ./gradlew signingReport
+
+      - name: Build Android APK
         run: |
           flutter build apk --release --split-per-abi
-          cd build/app/outputs/flutter-apk/ # Note: updated path for modern Flutter
-          # Using wildcard to find the arm64 file safely
+          cd build/app/outputs/flutter-apk/
           mv app-arm64-v8a-release.apk test-v1.0.${{ github.run_number }}.apk
-
-      - name: Build and Rename iOS IPA
-        run: |
-          flutter build ios --release --no-codesign
-          cd build/ios/iphoneos
-          mkdir Payload
-          cp -r Runner.app Payload/
-          zip -r test-v1.0.${{ github.run_number }}.ipa Payload
-          # No need to mv since we zipped directly to the final name
 
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          # Note the paths: building for release often changes the output subfolder
-          artifacts: "build/app/outputs/flutter-apk/test-*.apk,build/ios/iphoneos/test-*.ipa"
+          artifacts: "build/app/outputs/flutter-apk/test-*.apk"
           tag: v1.0.${{ github.run_number }}
-          token: ${{ secrets.GITHUB_TOKEN }} 
-          # Note: Standard GitHub token is usually ${{ secrets.GITHUB_TOKEN }} 
-          # unless you created a custom one named 'TOKEN'
+          token: ${{ secrets.GITHUB_TOKEN }}
