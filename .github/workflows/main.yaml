@@ -48,7 +48,9 @@ jobs:
 
       # CRITICAL: Run this to find the SHA-1 you need for Google Cloud Console
       - name: Generate Signing Report
-        run: cd android && ./gradlew signingReport
+        run: |
+          chmod +x android/gradlew
+          ./android/gradlew signingReport -p android
 
       - name: Build Android APK
         run: |
